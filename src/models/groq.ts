@@ -72,7 +72,7 @@ export class GroqAdapter extends BaseModelAdapter {
     try {
       // Try to generate a very simple response
       const response = await this.groq.chat.completions.create({
-        model: this.config.model || "llama3-8b-8192",
+        model: this.config.model,
         messages: [{ role: "user", content: "Respond with just 'OK'" }],
         max_tokens: 5,
       });
@@ -129,11 +129,22 @@ export class GroqAdapter extends BaseModelAdapter {
   // Check if model name is valid for Groq
   private isValidGroqModel(model: string): boolean {
     const validModels = [
-      "llama3-8b-8192",
-      "llama3-70b-8192",
-      "llama3-1b-8192",
-      "mixtral-8x7b-32768",
-      "gemma-7b-it",
+      "llama-3.1-8b-instant",
+      "llama-3.3-70b-versatile",
+      "whisper-large-v3",
+      "groq/compound-mini",
+      "openai/gpt-oss-safeguard-20b",
+      "groq/compound",
+      "qwen/qwen3-32b",
+      "openai/gpt-oss-20b",
+      "allam-2-7b",
+      "canopylabs/orpheus-v1-english",
+      "meta-llama/llama-4-scout-17b-16e-instruct",
+      "meta-llama/llama-prompt-guard-2-86m",
+      "canopylabs/orpheus-arabic-saudi",
+      "openai/gpt-oss-120b",
+      "meta-llama/llama-prompt-guard-2-22m",
+      "whisper-large-v3-turbo",
     ];
 
     return validModels.includes(model);
@@ -181,7 +192,7 @@ export class GroqAdapter extends BaseModelAdapter {
     supportedFeatures: string[];
   }> {
     return {
-      name: this.config.model || "llama3-8b-8192",
+      name: this.config.model,
       provider: "groq",
       maxTokens: 8192, // Groq's max output tokens
       supportedFeatures: [
