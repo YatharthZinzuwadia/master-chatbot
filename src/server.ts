@@ -3,22 +3,45 @@ import cors from "cors"; // Import CORS middleware
 import helmet from "helmet"; // Import security middleware
 import { config } from "./config/env"; // Import configuration
 import { mongoConnection } from "./memory/mongo"; // Import MongoDB connection
-import { initializeModelAdapter } from "./models"; // Import model adapter
-import { logger, createRequestLogger } from "./utils/logger"; // Import logger
+import { CopilotError } from "./types"; // Import custom error class
+import { initializeModelAdapter, getModelAdapter } from "./models"; // Import model adapter
+import { Orchestrator } from "./core/orchestrator"; // Import orchestrator class
+// NEW: Import universal AI execution components
+import { systemPromptManager } from "./core/system-prompt"; // Import system prompt manager
+import { knowledgeBaseManager } from "./core/knowledge-base"; // Import knowledge base manager
 import { ErrorHandler } from "./utils/errors"; // Import error handler
-import {
-  copilotRouter,
-  initializeOrchestrator,
-} from "./api/routes/copilot.route"; // Import copilot routes
+import { copilotRouter, getOrchestrator } from "./api/routes/copilot.route"; // Import copilot routes
 import { healthRouter } from "./api/routes/health.route"; // Import health routes
 import { v4 as uuidv4 } from "uuid"; // Import UUID generator
-
 // Create Express application
 const app = express();
 
 // Server state
 let server: any = null;
 let isShuttingDown = false;
+
+// Create logger (simple fallback)
+const logger = {
+  info: (message: string, data?: any) =>
+    console.log(`[INFO] ${message}`, data || ""),
+  warn: (message: string, data?: any) =>
+    console.warn(`[WARN] ${message}`, data || ""),
+  error: (message: string, data?: any, error?: Error) =>
+    console.error(`[ERROR] ${message}`, data || "", error || ""),
+};
+
+// Create request logger
+const createRequestLogger = (requestId: string) => ({
+  info: (message: string, data?: any) =>
+    console.log(`[${requestId}] [INFO] ${message}`, data || ""),
+  warn: (message: string, data?: any) =>
+    console.warn(`[${requestId}] [WARN] ${message}`, data || ""),
+  error: (message: string, data?: any, error?: Error) =>
+    console.error(`[${requestId}] [ERROR] ${message}`, data || "", error || ""),
+});
+
+// Global orchestrator instance
+let orchestrator: Orchestrator;
 
 // Initialize the application
 async function initializeApp(): Promise<void> {
@@ -73,9 +96,15 @@ function validateConfiguration(): void {
 async function connectDatabase(): Promise<void> {
   logger.info("Connecting to MongoDB...");
 
-  await mongoConnection.connect();
-
-  logger.info("MongoDB connection established");
+  try {
+    await mongoConnection.connect();
+    logger.info("MongoDB connection established");
+  } catch (error) {
+    logger.warn("MongoDB connection failed, using memory fallbacks", {
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+    // Continue without MongoDB - system will use memory fallbacks
+  }
 }
 
 // Initialize model adapter
@@ -91,9 +120,24 @@ async function initializeModel(): Promise<void> {
 
   // Initialize orchestrator after model adapter is ready
   logger.info("Initializing orchestrator...");
-  initializeOrchestrator();
+  orchestrator = new Orchestrator();
+
+  // Initialize universal AI execution components
+  logger.info("Initializing universal AI execution components...");
+  try {
+    await systemPromptManager.initializeDefaults();
+    await knowledgeBaseManager.initializeDefaults();
+    logger.info("Universal AI execution components initialized successfully");
+  } catch (error) {
+    logger.warn("Failed to initialize universal components, using defaults", {
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
 
   logger.info("Orchestrator initialized successfully");
+
+  // Set global orchestrator for routes
+  (global as any).orchestrator = orchestrator;
 }
 
 // Setup middleware

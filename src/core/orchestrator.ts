@@ -1,7 +1,10 @@
 import {
   CopilotRunRequest,
   CopilotRunResponse,
+  UniversalRunRequest,
   Intent,
+  SimpleIntent,
+  IntentDetectionResult,
   Conversation,
   ConversationMessage,
 } from "../types"; // Import relevant types
@@ -11,13 +14,270 @@ import { SystemPromptBuilder } from "../prompts/system.prompt"; // Import system
 import { ChatPromptBuilder } from "../prompts/chat.prompt"; // Import chat prompt builder
 import { StateUpdateBuilder } from "../prompts/state.prompt"; // Import state update builder
 import { toolManager } from "../tools"; // Import tool manager
+// NEW: Import dynamic execution layer components
+import { systemPromptManager } from "./system-prompt"; // Import system prompt manager
+import { knowledgeBaseManager } from "./knowledge-base"; // Import knowledge base manager
+import { simpleIntentDetector } from "./simple-intent"; // Import simple intent detector
+import { dynamicToolManager } from "./dynamic-tools"; // Import dynamic tool manager
+import { universalPromptBuilder } from "./universal-prompt-builder"; // Import universal prompt builder
+import { fallbackHandler } from "./fallback-handler"; // Import fallback handler
 import { v4 as uuidv4 } from "uuid"; // Import UUID generator
 
 // Main orchestrator class for processing AI Copilot requests
 export class Orchestrator {
   private modelAdapter = getModelAdapter(); // Get the configured model adapter
 
-  // Process a user request through the complete AI pipeline
+  // NEW: Process universal request with dynamic AI execution layer
+  async processUniversalRequest(
+    request: UniversalRunRequest,
+  ): Promise<CopilotRunResponse> {
+    const startTime = Date.now(); // Track processing time
+
+    try {
+      console.log("Processing Universal AI Execution request:", {
+        userInput: request.userInput,
+        contextKeys: Object.keys(request.context),
+        toolCount: request.tools.length,
+      });
+
+      // STEP 1: Validate input
+      const validationResult = this.validateUniversalRequest(request);
+      if (!validationResult.valid) {
+        throw new Error(
+          `Invalid universal request: ${validationResult.errors.join(", ")}`,
+        );
+      }
+
+      // STEP 2: Detect intent
+      const intentResult = simpleIntentDetector.detectIntent(
+        request.userInput,
+        request.tools,
+        request.context,
+      );
+      console.log("Intent detected:", intentResult);
+
+      // STEP 3: Fetch system prompt
+      const systemPrompt = await systemPromptManager.getPromptForContext(
+        request.context,
+      );
+      const formattedSystemPrompt =
+        systemPromptManager.buildPromptString(systemPrompt);
+
+      // STEP 4: Fetch relevant knowledge
+      const relevantKnowledge = await knowledgeBaseManager.getRelevantKnowledge(
+        request.userInput,
+        3, // Max 3 knowledge entries
+      );
+
+      // STEP 5: Execute tools if needed
+      let toolResults: any[] = [];
+      if (intentResult.intent.type === "tool") {
+        try {
+          // Register dynamic tools from request
+          dynamicToolManager.registerToolsFromDefinitions(request.tools);
+
+          // Execute the specific tool
+          const toolName =
+            intentResult.intent.type === "tool"
+              ? intentResult.intent.toolName
+              : "";
+          const toolResult = await dynamicToolManager.executeToolSafely(
+            toolName,
+            request.context,
+            request.tools.find((t) => t.name === toolName)?.inputSchema || {},
+          );
+
+          toolResults = [
+            {
+              toolName: intentResult.intent.toolName,
+              success: true,
+              result: toolResult,
+            },
+          ];
+        } catch (error) {
+          console.error("Tool execution failed:", error);
+          toolResults = [
+            {
+              toolName: intentResult.intent.toolName,
+              success: false,
+              error:
+                error instanceof Error ? error.message : "Unknown tool error",
+            },
+          ];
+        }
+      }
+
+      // STEP 6: Check for fallback scenarios
+      const fallbackResult = await fallbackHandler.handleFallback(
+        request.userInput,
+        intentResult,
+        toolResults.find((r) => !r.success)?.error
+          ? new Error(toolResults.find((r) => !r.success)!.error)
+          : undefined,
+        relevantKnowledge.length > 0,
+      );
+
+      // STEP 7: Build final prompt
+      const toolContext =
+        toolResults.length > 0
+          ? universalPromptBuilder.buildToolContext(toolResults)
+          : null;
+
+      const finalPrompt = universalPromptBuilder.buildFinalPrompt(
+        formattedSystemPrompt,
+        relevantKnowledge,
+        toolContext,
+        request.userInput,
+      );
+
+      // STEP 8: Generate response or use fallback
+      let response: string;
+      if (fallbackResult.shouldFallback) {
+        response = fallbackResult.fallbackResponse;
+        fallbackHandler.logFallbackEvent(
+          "fallback_applied",
+          request.userInput,
+          fallbackResult.fallbackReason,
+        );
+      } else {
+        response = await this.generateResponse(finalPrompt);
+      }
+
+      // STEP 9: Save to conversation (optional - for backward compatibility)
+      if (request.conversationId) {
+        await this.saveToConversation(
+          request.conversationId,
+          request.userInput,
+          response,
+        );
+      }
+
+      const processingTime = Date.now() - startTime;
+
+      console.log("Universal request processed successfully:", {
+        intent: intentResult.intent.type,
+        toolsUsed: toolResults.length,
+        knowledgeEntries: relevantKnowledge.length,
+        fallbackApplied: fallbackResult.shouldFallback,
+        processingTime,
+      });
+
+      return {
+        response,
+        conversationId: request.conversationId || this.generateConversationId(),
+        metadata: {
+          processingTime,
+          intent: intentResult.intent.type,
+          toolsUsed: toolResults.map((r) => r.toolName),
+          knowledgeEntries: relevantKnowledge.length,
+          fallbackApplied: fallbackResult.shouldFallback,
+        },
+      };
+    } catch (error) {
+      const processingTime = Date.now() - startTime;
+      console.error("Error processing universal request:", error);
+
+      // Always return a response, never break
+      return {
+        response: fallbackHandler.createSafeResponse(request.userInput),
+        conversationId: request.conversationId || this.generateConversationId(),
+        metadata: {
+          processingTime,
+          error: error instanceof Error ? error.message : "Unknown error",
+          fallbackUsed: true,
+        },
+      };
+    }
+  }
+
+  // Validate universal request format
+  private validateUniversalRequest(request: UniversalRunRequest): {
+    valid: boolean;
+    errors: string[];
+  } {
+    const errors: string[] = [];
+
+    if (!request.userInput || typeof request.userInput !== "string") {
+      errors.push("userInput is required and must be a string");
+    }
+
+    if (request.userInput && request.userInput.trim().length === 0) {
+      errors.push("userInput cannot be empty");
+    }
+
+    if (request.userInput && request.userInput.length > 10000) {
+      errors.push("userInput is too long (maximum 10,000 characters)");
+    }
+
+    if (!request.context || typeof request.context !== "object") {
+      errors.push("context is required and must be an object");
+    }
+
+    if (!Array.isArray(request.context.files)) {
+      errors.push("context.files must be an array");
+    }
+
+    if (!Array.isArray(request.context.repos)) {
+      errors.push("context.repos must be an array");
+    }
+
+    if (!Array.isArray(request.context.urls)) {
+      errors.push("context.urls must be an array");
+    }
+
+    if (
+      !request.context.metadata ||
+      typeof request.context.metadata !== "object"
+    ) {
+      errors.push("context.metadata is required and must be an object");
+    }
+
+    if (!Array.isArray(request.tools)) {
+      errors.push("tools must be an array");
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+    };
+  }
+
+  // Save to conversation (helper method)
+  private async saveToConversation(
+    conversationId: string,
+    userInput: string,
+    response: string,
+  ): Promise<void> {
+    try {
+      // Save user message
+      await conversationRepository.addMessage(conversationId, {
+        role: "user",
+        content: userInput,
+        metadata: {
+          tokens: this.estimateTokens(userInput),
+        },
+      });
+
+      // Save assistant response
+      await conversationRepository.addMessage(conversationId, {
+        role: "assistant",
+        content: response,
+        metadata: {
+          tokens: this.estimateTokens(response),
+        },
+      });
+    } catch (error) {
+      console.error("Failed to save to conversation:", error);
+      // Don't fail the entire request if saving fails
+    }
+  }
+
+  // Generate conversation ID (helper method)
+  private generateConversationId(): string {
+    return uuidv4();
+  }
+
+  // Legacy process method for backward compatibility
   async processRequest(
     request: CopilotRunRequest,
   ): Promise<CopilotRunResponse> {
