@@ -1,6 +1,7 @@
 import { ModelAdapter, ModelConfig } from "../types"; // Import types
 import { BaseModelAdapter } from "./base"; // Import base adapter
 import { GeminiAdapter } from "./gemini"; // Import Gemini adapter
+import { OpenAIAdapter } from "./openai"; // Import OpenAI adapter
 import { config } from "../config/env"; // Import environment config
 
 // Model factory class to create appropriate adapters
@@ -12,8 +13,7 @@ export class ModelFactory {
         return new GeminiAdapter(config);
 
       case "openai":
-        // Future: Add OpenAI adapter
-        throw new Error("OpenAI adapter not yet implemented");
+        return new OpenAIAdapter(config);
 
       default:
         throw new Error(`Unsupported model provider: ${config.provider}`);
@@ -55,7 +55,7 @@ export class ModelFactory {
 
   // Get list of supported providers
   static getSupportedProviders(): string[] {
-    return ["gemini"]; // Add more providers as they are implemented
+    return ["gemini", "openai"]; // Add more providers as they are implemented
   }
 
   // Validate provider configuration
@@ -90,7 +90,7 @@ export class ModelFactory {
 }
 
 // Export adapter classes for direct use
-export { BaseModelAdapter, GeminiAdapter };
+export { BaseModelAdapter, GeminiAdapter, OpenAIAdapter };
 
 // Export a singleton instance for convenience
 export let modelAdapter: ModelAdapter;
@@ -166,7 +166,7 @@ export async function getModelInfo(): Promise<{
       model: "unknown", // Would need to be added to base interface
     };
 
-    // Try to get additional info if available (Gemini specific)
+    // Try to get additional info if available
     if (adapter instanceof GeminiAdapter) {
       const geminiInfo = await adapter.getModelInfo();
       return {
@@ -175,6 +175,18 @@ export async function getModelInfo(): Promise<{
         capabilities: {
           maxTokens: geminiInfo.maxTokens,
           supportedFeatures: geminiInfo.supportedFeatures,
+        },
+      };
+    }
+
+    if (adapter instanceof OpenAIAdapter) {
+      const openaiInfo = await adapter.getModelInfo();
+      return {
+        ...info,
+        model: openaiInfo.name,
+        capabilities: {
+          maxTokens: openaiInfo.maxTokens,
+          supportedFeatures: openaiInfo.supportedFeatures,
         },
       };
     }
