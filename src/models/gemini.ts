@@ -13,7 +13,10 @@ export class GeminiAdapter extends BaseModelAdapter {
     this.validateConfig();
 
     // Initialize Google GenAI client
-    this.genAI = new GoogleGenAI({});
+    if (!this.config.apiKey) {
+      throw new Error("API key is required for Gemini adapter");
+    }
+    this.genAI = new GoogleGenAI({ apiKey: this.config.apiKey });
   }
 
   // Generate response using Gemini API
