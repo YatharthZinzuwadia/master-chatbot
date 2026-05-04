@@ -1,10 +1,5 @@
 {
   "version": 2,
-  "functions": {
-    "dist/server.js": {
-      "runtime": "@vercel/node"
-    }
-  },
   "rewrites": [
     {
       "source": "/(.*)",
