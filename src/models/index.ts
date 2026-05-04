@@ -2,6 +2,7 @@ import { ModelAdapter, ModelConfig } from "../types"; // Import types
 import { BaseModelAdapter } from "./base"; // Import base adapter
 import { GeminiAdapter } from "./gemini"; // Import Gemini adapter
 import { OpenAIAdapter } from "./openai"; // Import OpenAI adapter
+import { GroqAdapter } from "./groq"; // Import Groq adapter
 import { config } from "../config/env"; // Import environment config
 
 // Model factory class to create appropriate adapters
@@ -14,6 +15,9 @@ export class ModelFactory {
 
       case "openai":
         return new OpenAIAdapter(config);
+
+      case "groq":
+        return new GroqAdapter(config);
 
       default:
         throw new Error(`Unsupported model provider: ${config.provider}`);
@@ -48,6 +52,12 @@ export class ModelFactory {
         }
         return config.OPENAI_API_KEY;
 
+      case "groq":
+        if (!config.GROQ_API_KEY) {
+          throw new Error("GROQ_API_KEY is required for Groq provider");
+        }
+        return config.GROQ_API_KEY;
+
       default:
         throw new Error(`No API key configured for provider: ${provider}`);
     }
@@ -55,7 +65,7 @@ export class ModelFactory {
 
   // Get list of supported providers
   static getSupportedProviders(): string[] {
-    return ["gemini", "openai"]; // Add more providers as they are implemented
+    return ["gemini", "openai", "groq"]; // Add more providers as they are implemented
   }
 
   // Validate provider configuration
@@ -78,6 +88,12 @@ export class ModelFactory {
         }
         break;
 
+      case "groq":
+        if (!config.GROQ_API_KEY) {
+          errors.push("GROQ_API_KEY is required");
+        }
+        break;
+
       default:
         errors.push(`Unsupported provider: ${provider}`);
     }
@@ -90,7 +106,7 @@ export class ModelFactory {
 }
 
 // Export adapter classes for direct use
-export { BaseModelAdapter, GeminiAdapter, OpenAIAdapter };
+export { BaseModelAdapter, GeminiAdapter, OpenAIAdapter, GroqAdapter };
 
 // Export a singleton instance for convenience
 export let modelAdapter: ModelAdapter;
@@ -187,6 +203,18 @@ export async function getModelInfo(): Promise<{
         capabilities: {
           maxTokens: openaiInfo.maxTokens,
           supportedFeatures: openaiInfo.supportedFeatures,
+        },
+      };
+    }
+
+    if (adapter instanceof GroqAdapter) {
+      const groqInfo = await adapter.getModelInfo();
+      return {
+        ...info,
+        model: groqInfo.name,
+        capabilities: {
+          maxTokens: groqInfo.maxTokens,
+          supportedFeatures: groqInfo.supportedFeatures,
         },
       };
     }

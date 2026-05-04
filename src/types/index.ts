@@ -163,6 +163,7 @@ export interface EnvConfig {
   MODEL_NAME: string; // Model name to use
   GEMINI_API_KEY?: string | undefined; // Gemini API key (if using Gemini)
   OPENAI_API_KEY?: string | undefined; // OpenAI API key (if using OpenAI)
+  GROQ_API_KEY?: string | undefined; // Groq API key (if using Groq)
   MAX_TOKENS: number; // Maximum tokens for responses
   TEMPERATURE: number; // Temperature for model generation
   LOG_LEVEL: string; // Logging level
