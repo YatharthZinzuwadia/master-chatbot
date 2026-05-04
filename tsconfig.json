@@ -20,8 +20,7 @@
     "noImplicitReturns": true, // Report error when not all code paths return
     "noFallthroughCasesInSwitch": true, // Report errors for fallthrough cases in switch
     "noUncheckedIndexedAccess": true, // Check for possible undefined index access
-    "exactOptionalPropertyTypes": true, // Enforce exact optional property types
-    "types": ["node"] // Include Node.js type definitions
+    "exactOptionalPropertyTypes": true // Enforce exact optional property types
   },
   "include": [
     "src/**/*" // Include all TypeScript files in src directory
