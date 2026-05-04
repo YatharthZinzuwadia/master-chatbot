@@ -2,7 +2,7 @@
   "version": 2,
   "functions": {
     "dist/server.js": {
-      "runtime": "nodejs18.x"
+      "runtime": "@vercel/node"
     }
   },
   "rewrites": [
