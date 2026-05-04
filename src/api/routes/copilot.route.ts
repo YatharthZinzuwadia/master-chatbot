@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from "express"; // Import Exp
 import {
   CopilotRunRequest,
   CopilotRunResponse,
+  UniversalRunRequest,
   ApiResponse,
   Tool,
 } from "../../types"; // Import relevant types
@@ -22,15 +23,74 @@ export function initializeOrchestrator(): Orchestrator {
 
 // Function to get the orchestrator instance
 export function getOrchestrator(): Orchestrator {
+  // This will be set by the server during initialization
+  const orchestrator = (global as any).orchestrator;
   if (!orchestrator) {
     throw new Error(
-      "Orchestrator not initialized. Call initializeOrchestrator() first.",
+      "Orchestrator not initialized. Server must be started first.",
     );
   }
   return orchestrator;
 }
 
-// Main copilot run endpoint
+// NEW: Universal AI execution endpoint
+router.post(
+  "/universal",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      console.log("Received universal AI execution request:", {
+        body: req.body,
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+      });
+
+      // Validate universal request body
+      const validationResult = validateUniversalRequest(req.body);
+      if (!validationResult.valid) {
+        const response: ApiResponse = {
+          success: false,
+          error: `Invalid universal request: ${validationResult.errors.join(", ")}`,
+          timestamp: new Date(),
+        };
+
+        return res.status(400).json(response);
+      }
+
+      // Process request with universal orchestrator
+      const result = await getOrchestrator().processUniversalRequest(req.body);
+
+      // Create success response
+      const response: ApiResponse<CopilotRunResponse> = {
+        success: true,
+        data: result,
+        timestamp: new Date(),
+      };
+
+      console.log("Universal request processed successfully:", {
+        conversationId: result.conversationId,
+        responseLength: result.response.length,
+        metadata: result.metadata,
+      });
+
+      res.json(response);
+      return;
+    } catch (error) {
+      console.error("Error in universal endpoint:", error);
+
+      const response: ApiResponse = {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Unknown error occurred",
+        timestamp: new Date(),
+      };
+
+      res.status(500).json(response);
+      return;
+    }
+  },
+);
+
+// Main copilot run endpoint (legacy)
 router.post("/run", async (req: Request, res: Response, next: NextFunction) => {
   try {
     console.log("Received copilot run request:", {
@@ -404,6 +464,58 @@ router.get(
     }
   },
 );
+
+// Validate universal request format
+function validateUniversalRequest(body: any): {
+  valid: boolean;
+  errors: string[];
+} {
+  const errors: string[] = [];
+
+  // Check required fields
+  if (!body.userInput || typeof body.userInput !== "string") {
+    errors.push("userInput field is required and must be a string");
+  }
+
+  if (body.userInput && body.userInput.trim().length === 0) {
+    errors.push("userInput cannot be empty");
+  }
+
+  if (body.userInput && body.userInput.length > 10000) {
+    errors.push("userInput is too long (maximum 10,000 characters)");
+  }
+
+  // Check context structure
+  if (!body.context || typeof body.context !== "object") {
+    errors.push("context is required and must be an object");
+  } else {
+    if (!Array.isArray(body.context.files)) {
+      errors.push("context.files must be an array");
+    }
+
+    if (!Array.isArray(body.context.repos)) {
+      errors.push("context.repos must be an array");
+    }
+
+    if (!Array.isArray(body.context.urls)) {
+      errors.push("context.urls must be an array");
+    }
+
+    if (!body.context.metadata || typeof body.context.metadata !== "object") {
+      errors.push("context.metadata is required and must be an object");
+    }
+  }
+
+  // Check tools array
+  if (!Array.isArray(body.tools)) {
+    errors.push("tools must be an array");
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+}
 
 // Validate run request
 function validateRunRequest(body: any): { valid: boolean; errors: string[] } {

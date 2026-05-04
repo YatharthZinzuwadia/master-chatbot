@@ -36,13 +36,69 @@ export interface ConversationMetadata {
   title?: string; // Optional conversation title
 }
 
+// ===== DYNAMIC AI EXECUTION LAYER TYPES =====
+
+// Universal input format for dynamic execution
+export interface UniversalRequest {
+  userInput: string; // User's input message
+  context: {
+    files: string[]; // File paths or content
+    repos: string[]; // Repository references
+    urls: string[]; // URL references
+    metadata: Record<string, any>; // Additional metadata
+  };
+  tools: ToolDefinition[]; // Available tools for this request
+}
+
+// Tool definition for dynamic registration
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: Record<string, any>;
+}
+
+// System prompt structure
+export interface SystemPrompt {
+  id: string;
+  content: string;
+  rules: string[];
+  behavior: string[];
+  isActive: boolean;
+}
+
+// Knowledge base entry
+export interface KnowledgeEntry {
+  id: string;
+  content: string;
+  keywords: string[];
+  category: string;
+  relevance: number;
+}
+
+// Simplified intent type
+export type SimpleIntent =
+  | { type: "chat" }
+  | { type: "tool"; toolName: string; reason: string };
+
+// New simplified intent detection result
+export interface IntentDetectionResult {
+  intent: SimpleIntent;
+  confidence: number;
+  reasoning: string;
+}
+
 // ===== API REQUEST/RESPONSE TYPES =====
 
-// Request payload for the copilot run endpoint
+// Legacy request payload (for backward compatibility)
 export interface CopilotRunRequest {
   message: string; // User's message
   conversationId?: string; // Optional existing conversation ID
   context?: Record<string, any>; // Optional additional context
+}
+
+// New universal request payload
+export interface UniversalRunRequest extends UniversalRequest {
+  conversationId?: string; // Optional existing conversation ID
 }
 
 // Response payload for the copilot run endpoint
@@ -58,6 +114,10 @@ export interface ResponseMetadata {
   processingTime?: number; // Total processing time
   intent?: string; // Detected intent
   toolsUsed?: string[]; // Tools that were used
+  knowledgeEntries?: number; // Number of knowledge entries used
+  fallbackApplied?: boolean; // Whether fallback was applied
+  fallbackUsed?: boolean; // Whether fallback was used
+  error?: string; // Error message if any
 }
 
 // ===== MODEL ADAPTER TYPES =====
